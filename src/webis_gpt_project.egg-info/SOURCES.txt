@@ -1,0 +1,11 @@
+pyproject.toml
+setup.py
+src/__init__.py
+src/app.py
+src/config.py
+src/style/utils.py
+src/webis_gpt_project.egg-info/PKG-INFO
+src/webis_gpt_project.egg-info/SOURCES.txt
+src/webis_gpt_project.egg-info/dependency_links.txt
+src/webis_gpt_project.egg-info/requires.txt
+src/webis_gpt_project.egg-info/top_level.txt

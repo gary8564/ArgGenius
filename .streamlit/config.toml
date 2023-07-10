@@ -1,0 +1,21 @@
+[theme]
+
+# The preset Streamlit theme that your custom theme inherits from.
+# One of "light" or "dark".
+base = "dark"
+
+# Used to style primary interface elements. It's the color displayed most
+# frequently across your app's widgets (slider, checkbox, buttons)
+primaryColor = "#0E8388"
+
+# Background color for the main container.
+backgroundColor = "#2C3333"
+
+# Used as the background for most widgets (sidebar, text input etc.)
+secondaryBackgroundColor = "#2E4F4F"
+
+# Font color for the page.
+textColor = "#CBE4DE"
+
+# Font family for the page. (One of "serif", "sans serif" or "mono")
+font = "monospace"
