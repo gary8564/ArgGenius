@@ -64,6 +64,12 @@ import os
 api_key = os.environ['HUGGINGFACEHUB_API_TOKEN']
 ```
 
+## Usage
+Run locally on your local machine.
+``` bash
+streamlit run app.py
+```
+
 
 ## Data corpus
 
