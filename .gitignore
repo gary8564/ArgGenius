@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+**/__pycache__/
 
 # C extensions
 *.so
@@ -12,8 +13,8 @@ build/
 develop-eggs/
 dist/
 downloads/
-eggs/
-.eggs/
+**/eggs/
+**/.eggs/
 lib/
 lib64/
 parts/
@@ -21,9 +22,9 @@ sdist/
 var/
 wheels/
 share/python-wheels/
-*.egg-info/
+**.egg-info/
 .installed.cfg
-*.egg
+**.egg
 MANIFEST
 .env
 
@@ -184,6 +185,8 @@ cython_debug/
 # data
 *.csv
 .DS_Store
+**/.DS_Store
+**/*.csv
 
 =======
 
