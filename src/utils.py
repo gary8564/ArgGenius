@@ -8,7 +8,7 @@ def load_data() -> list:
     :return: list of dicts
     """
     df = pd.read_csv(SAVE_FILEPATH)
-    result = df.to_dict('records', index=False)
+    result = df.to_dict('records')
     return result
 
 def store_data(result_db) -> None:
@@ -17,5 +17,5 @@ def store_data(result_db) -> None:
     :return: None
     """
     df = pd.DataFrame(result_db)
-    df.to_csv(SAVE_FILEPATH)
+    df.to_csv(SAVE_FILEPATH, index=False)
     

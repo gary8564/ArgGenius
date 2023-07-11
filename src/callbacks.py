@@ -7,5 +7,5 @@ def clicked(stage, reset=False, results=None):
     if reset:
         store_data(results)
         session.clear()
-        st.experimental_rerun()
+        #st.experimental_rerun()
     

@@ -357,6 +357,7 @@ def main_page(results):
                 arg2_placeholder.empty()
                 arg1_button.empty()
                 arg2_button.empty()
+                st.balloons()
                 if session.get("status") == 2:
                     imagepath = './img/AI_win.png' if index == 0 else './img/Human_win.png'
                     with open(imagepath, "rb") as f:
@@ -364,7 +365,6 @@ def main_page(results):
                     winner = "AI " if index == 0 else "Human"
                     session.update("winner", winner)
                     text = f'{winner} win!!!'
-                    st.balloons()
                     st.markdown(f"""
                                 <center>
                                     <img src="data:image/png;base64,{image}" />
@@ -382,7 +382,6 @@ def main_page(results):
                     winner = "Human " if index == 0 else "AI"
                     session.update("winner", winner)
                     text = f'{winner} win!!!'
-                    st.balloons()
                     st.markdown(f"""
                                 <center>
                                     <img src="data:image/png;base64,{image}" />
@@ -394,10 +393,10 @@ def main_page(results):
                                 """, unsafe_allow_html=True)
                     
             new_sample = {
-                'issue': session.get('topic'),
-                'stance': session.get('stance'),
-                'arguAI': session.get('arguAI'),
-                'arguHuman': session.get('arguHuman'),
+                'Issue': session.get('topic'),
+                'Stance': session.get('stance'),
+                'ArguAI': session.get('arguAI'),
+                'ArguHuman': session.get('arguHuman'),
                 'Winner': session.get("winner")
             }
             results.append(new_sample)
