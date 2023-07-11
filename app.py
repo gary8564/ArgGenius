@@ -3,7 +3,9 @@ from dotenv import load_dotenv, find_dotenv
 import streamlit as st 
 from langchain import HuggingFaceHub
 from langchain import PromptTemplate, LLMChain, OpenAI 
+from langchain.prompts.few_shot import FewShotPromptTemplate
 import openai
+from getpass import getpass
 import textwrap
 import pandas as pd
 import numpy as np
@@ -15,6 +17,7 @@ from src.config import *
 from src.session_state import session
 from src.style.sidebar import render_sidebar 
 from src.callbacks import clicked
+from src.utils import load_data
 
 # DESIGN implement changes to the standard streamlit UI/UX
 st.set_page_config(page_title=PAGE_TITLE, page_icon=Image.open(PAGE_ICON))
@@ -30,82 +33,163 @@ session.init("arguAI", "")
 session.init("arguHuman", "")
 session.init("index", -1)
 
-def falcon_agi(topic, stance):
+
+def fewShotPromptTemplate():
+    # create examples from ChatGPT
+    examples = [
+        {
+            "query": "Given the debate issue `gay marriage`, please write a succinct and compelling argument in opposition to the issue. \
+                      The argument should write in a conversational manner and be less than 50 words. \
+                      Please avoid exposing your AI identity, such as mentioning you are an AI model in your answer.",
+            "answer": 
+                """
+                It is crucial to recognize that arguments against gay marriage have been widely discredited and are no longer supported by the majority of society. \
+                Nonetheless, I can present a historical argument that have been used in the past, \
+                but please remember that this argument do not reflect my personal beliefs or values. \
+                Marriage has historically been defined as the union between one man and one woman. \
+                Changing this definition undermines the institution of marriage and its long-standing cultural, religious, and social significance. \
+                Also, marriage is primarily intended for procreation and the raising of children. \
+                Same-sex couples cannot naturally conceive children and therefore should not be allowed to marry.
+                """
+        },
+        {
+            "query": "Given the debate issue `ban plastic water bottles`, please write a succinct and compelling argument in opposition to the issue. \
+                      The argument should write in a conversational manner and be less than 50 words. \
+                      Please avoid exposing your AI identity, such as mentioning you are an AI model in your answer.",
+            "answer": 
+                """
+                Banning plastic water bottles might seem like a good idea, but banning plastic water bottles isn't the solution. \
+                Did you know that plastic bottles only make up 3% of total waste? \
+                According to the EPA, paper and cardboard contribute way more! \
+                Plus, it could negatively impact vulnerable communities that rely on bottled water. \
+                Let's focus on recycling and tackling the bigger sources of waste instead. (Source: United States Environmental Protection Agency)
+                """
+        },
+        {
+            "query": "Given the debate issue `If your spouse committed murder and he or she confided in you, you would turn them in.`, \
+                      please write a succinct and compelling argument in opposition to the issue. \
+                      The argument should write in a conversational manner and be less than 50 words. \
+                      Please avoid exposing your AI identity, such as mentioning you are an AI model in your answer.",
+            "answer":
+                """
+                No way, man! If my spouse committed murder and told me, I couldn't just turn them in. \
+                Love and loyalty run deep, but there are logical reasons too. \
+                Snitching might put me in danger and tear our family apart. Let the justice system do its thing, \
+                but I won't be the one to break the bond.
+                """
+        },
+        {
+            "query": "Given the debate issue `Christianity or Atheism`, please write a succinct and compelling argument in opposition to the issue. \
+                      The argument should write in a conversational manner and be less than 50 words. \
+                      Please avoid exposing your AI identity, such as mentioning you are an AI model in your answer.",
+            "answer":
+                """
+                Christianity offers hope, purpose, and a moral compass. Its teachings promote love, forgiveness, and the value of every individual.\
+                The transformative power of faith and the promise of eternal life provide comfort and guidance in navigating life's challenges.\
+                It's all about living a meaningful life and making a positive impact. Who wouldn't want that?
+                """
+        }
+    ]
+        
+    # create a example template
+    example_template = """
+    Layman: {query}
+    Expert: {answer}
+    """
+    
+    # create a prompt example from above template
+    example_prompt = PromptTemplate(input_variables=["query", "answer"], template=example_template)
+    
+    # now break our previous prompt into a prefix and suffix
+    # the prefix is our instructions
+    prefix = """
+    You are the argument writing expert that can help laymen to generate a persuasive argument \
+    to convince people to change their viewpoints. \
+    Here are some examples exerpted from your conversations with a layman: 
+    """
+    # and the suffix our user input and output indicator
+    suffix = """
+    Layman: {query} 
+    Expert: 
+    """
+    
+    # now create the few shot prompt template
+    few_shot_prompt_template = FewShotPromptTemplate(
+        examples=examples,
+        example_prompt=example_prompt,
+        prefix=prefix,
+        suffix=suffix,
+        input_variables=["query"],
+        example_separator="\n\n"
+    )
+    
+    return few_shot_prompt_template
+
+def agi(topic, stance, model=None, fewshot=False):
+    assert model in [None, "falcon", "flan"]
     # Load the HuggingFaceHub API token from the .env file
     load_dotenv(find_dotenv())
     HUGGINGFACEHUB_API_TOKEN = os.environ["HUGGINGFACEHUB_API_TOKEN"]
 
     # Load the LLM model from the HuggingFaceHub
-    repo_id = "tiiuae/falcon-7b-instruct"  # See https://huggingface.co/models?pipeline_tag=text-generation&sort=downloads for some other options
-    falcon_llm = HuggingFaceHub(
-        repo_id=repo_id, model_kwargs={"temperature": 0.9, "max_new_tokens": 500}
-    )
-    template="You are a debate master that can produce a persuasive argument \
+    repo_id_1 = "tiiuae/falcon-7b-instruct"  # See https://huggingface.co/models?pipeline_tag=text-generation&sort=downloads for some other options
+    repo_id_2 = "google/flan-t5-xxl"  # See https://huggingface.co/models?pipeline_tag=text-generation&sort=downloads for some other options
+    llm = OpenAI(model_name="text-davinci-003", temperature=0.9)
+    if model is not None:
+        if model == "falcon":
+            llm = HuggingFaceHub( 
+                    repo_id=repo_id_1, model_kwargs={"temperature": 1.0, "max_new_tokens": 500}
+                  )
+        else:
+            llm = HuggingFaceHub( 
+                    repo_id=repo_id_2, model_kwargs={"temperature": 1.0, "max_new_tokens": 500}
+                  )
+    if fewshot:
+        query = f"Given the debate issue {topic}, please write a concise and compelling argument {stance}. \
+                  Please write in less than 30 words and in a more conversational way. \
+                  "
+        few_shot_prompt_template = fewShotPromptTemplate()
+        print(few_shot_prompt_template.format(query=query))
+        llm_chain = LLMChain(prompt=few_shot_prompt_template, llm=llm)
+        response = llm_chain.run(query)
+        wrapped_text = textwrap.fill(response, width=100, break_long_words=False, replace_whitespace=False)
+        return wrapped_text
+    else: 
+        template="You are a debate expert that can produce a persuasive argument \
               to convince people to change their viewpoints. \
-              Now, you are going to take part in a debate competition on a online discussion forum. \
-              Given the debate issue {topic}, please write a succinct and compelling argument {stance}. \
-              The argument should be less than 30 words.\
-              Please avoid exposing your AI identity. \
-              That is, do not begin your argument with `as an AI language model` \
-              nor write anything irrelevant to the topic."
-              
-    prompt = PromptTemplate(
-                input_variables=["topic", "stance"],
-                template=template,
-             ) 
-    print(prompt.format(topic=topic, stance=stance))
-    llm_chain = LLMChain(prompt=prompt, llm=falcon_llm)
-    response = llm_chain.run({
-        'topic': topic,
-        'stance': stance
-    })
-    wrapped_text = textwrap.fill(
-        response, width=100, break_long_words=False, replace_whitespace=False
-    )
-    return wrapped_text
- 
-def gorilla_agi(topic, stance):
-    openai.api_key = "EMPTY" # Key is ignored and does not matter
-    openai.api_base = "http://34.132.127.197:8000/v1"
-    def get_gorilla_response(prompt="I would like to translate from English to French.", model="gorilla-7b-hf-v0"):
-        completion = openai.ChatCompletion.create(model=model, messages=[{"role": "user", "content": prompt}])
-        return completion.choices[0].message.content
-    template="You are a debate master that can produce a persuasive argument \
-              to convince people to change their viewpoints. \
-              Now, you are going to take part in a debate competition on a online discussion forum. \
-              Given the debate issue {topic}, please write a succinct and compelling argument {stance}. \
-              The argument should be less than 50 words.\
-              To be more persuasive, try to give a attractive hook or some statistical facts in your argument. \
-              Please avoid exposing your AI identity. \
-              Do not include `as an AI language model` in your answer. \
-              Do not write anything irrelevant to the topic."
-              
-    prompt = PromptTemplate(
-                input_variables=["topic", "stance"],
-                template=template,
-             ) 
-    prompt = prompt.format(topic=topic, stance=stance)
-    print(prompt)
-    response = get_gorilla_response(prompt, model="gorilla-7b-hf-v0" )
-    wrapped_text = textwrap.fill(
-        response, width=100, break_long_words=False, replace_whitespace=False
-    )
-    return wrapped_text
+              Now, given the debate issue {topic}, \
+              please write a succinct and compelling argument {stance}. \
+              Your answer should be in less than 50 words and in a more informal, conversational way.\
+              Also, in your argument please mention convincing and logical reasons or citations from studies or websites to support your claim. \
+              If citations are used, please mentioned where you cite them. \
+              Avoid exposing your AI identity in your answer, such as mentioning you are an AI model in your answer. \
+              "
+        prompt = PromptTemplate(
+                    input_variables=["topic", "stance"],
+                    template=template,
+                ) 
+        llm_chain = LLMChain(prompt=prompt, llm=llm)
+        response = llm_chain.run({
+                    'topic': topic,
+                    'stance': stance
+                    })
+        wrapped_text = textwrap.fill(response, width=100, break_long_words=False, replace_whitespace=False)
+        return wrapped_text
 
 def gen_counter_arguAI(input_topic, input_stance):
     assert input_stance in ALL_STANCES_OPTIONS
     if input_stance in ["Agree", "Disagree"]:
-        stance = "in favor of the topic statement" if input_stance == "Disagree" else "in opposition to the topic statement"
-        return gorilla_agi(input_topic, stance)
+        stance = "in favor of the issue" if input_stance == "Disagree" else "in opposition to the issue"
+        return agi(input_topic, stance)
     elif input_stance in ["Christianity", "Atheism"]:
         stance = "in favor of Christianity" if input_stance == "Atheism" else "in favor of Atheism"
-        return gorilla_agi(input_topic, stance)
+        return agi(input_topic, stance)
     elif input_stance in ["Evolution", "Creation"]:
         stance = "in favor of Creation" if input_stance == "Evolution" else "in favor of Evolution"
-        return gorilla_agi(input_topic, stance)
+        return agi(input_topic, stance, model="falcon")
     else:
-        stance = "in favor of Personal persuit" if input_stance == "Advancing the common good" else "in favor of Personal persuit"
-        return gorilla_agi(input_topic, stance)
+        stance = "in favor of Personal persuit" if input_stance == "Advancing the common good" else "in favor of Advancing the common good"
+        return agi(input_topic, stance, model="falcon")
 
 def gen_counter_arguHuman(input_topic, input_stance):
     corpus_path = "./data/dagstuhl-15512-argquality-corpus-annotated.csv"
@@ -216,6 +300,8 @@ def main_page(results):
     stance = session.get('stance')
     arguAI = session.get("arguAI")
     arguHuman = session.get("arguHuman")
+    if os.path.isfile(SAVE_FILEPATH):
+        results = load_data()
     if session.get("status") < 2 or session.get("index") == -1:
         index = random.randint(0, 1)
         session.update("index", index)
@@ -316,9 +402,9 @@ def main_page(results):
             }
             results.append(new_sample)
             
-            st.write("randm index for block1:", index)
-            st.write("button state:", session.get("status"))
-            st.write("results:", results)
+            #st.write("randm index for block1:", index)
+            #st.write("button state:", session.get("status"))
+            #st.write("results:", results)
     st.button("Reset", key="reset", on_click=clicked, args=(0, True, results))  
                     
 if __name__ == '__main__':

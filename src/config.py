@@ -11,7 +11,7 @@ ARGU_TOPIC_OPTIONS_DISPLAY = [
     "India has the potential to lead the world", 
     "Having a lousy father is better than to be fatherless.",
     "Porn is wrong.", 
-    "Personal persuit or advancing the common good"
+    "Personal persuit or Advancing the common good"
 ]
 ARGU_TOPIC_OPTIONS_DB = [
     "ban-plastic-water-bottles",

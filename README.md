@@ -2,7 +2,7 @@
 
 This repository focuses on experimenting the capacity of large language models (LLMs) in argumentation generation. To undergo more detailed analysis, this app was built to hold a small competition between human and LLM. More specifically, the app will generate two counterarguments based on the topic and stance the users select: one is from LLM, the other is from human and ask users to choose one counterargument against their stance that they feel more convinced. 
 
-In this project, [Falcon-7b-instruct](https://huggingface.co/tiiuae/falcon-7b-instruct) and [Gorilla](https://shishirpatil.github.io/gorilla/) from Huggingface Hub was used.
+In this project, [Falcon-7b-instruct](https://huggingface.co/tiiuae/falcon-7b-instruct), [Flan](https://huggingface.co/google/flan-t5-xxl), and [GPT](https://openai.com/) was used.
 
 
 ## Requirements
@@ -47,9 +47,10 @@ pip install -r requirements.txt
 
 #### 4. Set up the keys in a .env file
 
-First, create a `.env` file in the root directory of the project. Inside the file, add your Huggingface API key:
+First, create a `.env` file in the root directory of the project. Inside the file, add your OpenAI API key and Huggingface API key:
 
 ```makefile
+OPENAI_API_KEY="your_api_key_here"
 HUGGINGFACEHUB_API_TOKEN="your_api_key_here"
 ```
 
