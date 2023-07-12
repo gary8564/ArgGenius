@@ -34,16 +34,10 @@ class Session:
     def to_dict(self):
         return st.session_state.to_dict()
 
-    def render(self):
-        page = self.get_current_page()
-        page_func = self.get_page_map()[page]
-        page_func()
-
     def clear(self):
-        session.update("arguAI", '')
-        session.update("arguHuman", '')
-        session.update("status", 0)
-        session.update("winner", '')
+        # Delete all the items in Session state
+        for key in st.session_state.keys():
+            del st.session_state[key]
     
     def remove(self, key: str):
         del st.session_state[key]

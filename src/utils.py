@@ -16,6 +16,8 @@ def store_data(result_db) -> None:
     should be called after the result has been generated
     :return: None
     """
+    if len(result_db) == 0:
+        pass
     df = pd.DataFrame(result_db)
     df.to_csv(SAVE_FILEPATH, index=False)
     

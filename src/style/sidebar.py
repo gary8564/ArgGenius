@@ -4,6 +4,7 @@ import base64
 from pathlib import Path
 import os
 
+@st.cache_data(show_spinner=False)
 def render_sidebar():
     current_path = os.getcwd()
     logo_path = current_path + "/img/cmv_logo.png"

@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import random
 import re
+import time
 from PIL import Image
 import base64
 from src.config import *
@@ -33,7 +34,7 @@ session.init("arguAI", "")
 session.init("arguHuman", "")
 session.init("index", -1)
 
-
+@st.cache_data(show_spinner=False)
 def fewShotPromptTemplate():
     # create examples from ChatGPT
     examples = [
@@ -125,25 +126,29 @@ def fewShotPromptTemplate():
     
     return few_shot_prompt_template
 
-def agi(topic, stance, model=None, fewshot=False):
-    assert model in [None, "falcon", "flan"]
+@st.cache_resource(show_spinner=False)
+def load_llm_models():
     # Load the HuggingFaceHub API token from the .env file
     load_dotenv(find_dotenv())
     HUGGINGFACEHUB_API_TOKEN = os.environ["HUGGINGFACEHUB_API_TOKEN"]
-
     # Load the LLM model from the HuggingFaceHub
     repo_id_1 = "tiiuae/falcon-7b-instruct"  # See https://huggingface.co/models?pipeline_tag=text-generation&sort=downloads for some other options
     repo_id_2 = "google/flan-t5-xxl"  # See https://huggingface.co/models?pipeline_tag=text-generation&sort=downloads for some other options
-    llm = OpenAI(model_name="text-davinci-003", temperature=0.9)
-    if model is not None:
-        if model == "falcon":
-            llm = HuggingFaceHub( 
-                    repo_id=repo_id_1, model_kwargs={"temperature": 1.0, "max_new_tokens": 500}
-                  )
-        else:
-            llm = HuggingFaceHub( 
-                    repo_id=repo_id_2, model_kwargs={"temperature": 1.0, "max_new_tokens": 500}
-                  )
+    falcon = HuggingFaceHub(repo_id=repo_id_1, 
+                         model_kwargs={"temperature": 1.0, "max_new_tokens": 500})
+    flan = HuggingFaceHub(repo_id=repo_id_2, 
+                          model_kwargs={"temperature": 1.0, "max_new_tokens": 500})
+    gpt = OpenAI(model_name="text-davinci-003", temperature=0.9)
+    return falcon, flan, gpt
+
+def agi(topic, stance, model="gpt", fewshot=False):
+    assert model in ["gpt", "falcon", "flan"]
+    falcon, flan, gpt = load_llm_models()
+    llm = gpt 
+    if model == "falcon":
+        llm = falcon
+    elif model == "flan":
+        llm = flan    
     if fewshot:
         query = f"Given the debate issue {topic}, please write a concise and compelling argument {stance}. \
                   Please write in less than 30 words and in a more conversational way. \
@@ -191,11 +196,16 @@ def gen_counter_arguAI(input_topic, input_stance):
         stance = "in favor of Personal persuit" if input_stance == "Advancing the common good" else "in favor of Advancing the common good"
         return agi(input_topic, stance, model="falcon")
 
-def gen_counter_arguHuman(input_topic, input_stance):
+@st.cache_data(show_spinner=False)
+def load_arguHuman_data():
     corpus_path = "./data/dagstuhl-15512-argquality-corpus-annotated.csv"
-    match_index = ARGU_TOPIC_OPTIONS_DISPLAY.index(input_topic)
     df_human = pd.read_csv(corpus_path, encoding='latin-1', sep='\t')
     df_human = df_human[["issue", "argument", "stance"]]
+    return df_human
+
+def gen_counter_arguHuman(input_topic, input_stance):
+    df_human = load_arguHuman_data()
+    match_index = ARGU_TOPIC_OPTIONS_DISPLAY.index(input_topic)
     df_topic = df_human[df_human["issue"] == ARGU_TOPIC_OPTIONS_DB[match_index]]
     df_topic = df_topic.dropna(how='all')
     df_topic_counter = df_topic
@@ -235,23 +245,27 @@ def gen_counter_arguHuman(input_topic, input_stance):
         else:
             df_topic_counter = df_topic[df_topic["stance"].str.contains("yes")]
     df_topic_counter_argu = df_topic_counter["argument"]
-    df_topic_counter_argu = df_topic_counter_argu.iloc[random.randint(0, df_topic_counter_argu.size-1)]
-    df_topic_counter_argu = df_topic_counter_argu.replace("</br>","")
-    df_topic_counter_argu = df_topic_counter_argu.replace("<br/>","")
-    re.sub(r'^https?:\/\/.*[\r\n]*', '', df_topic_counter_argu)
-
+    topic_counter_argu = df_topic_counter_argu.iloc[random.randint(0, df_topic_counter_argu.size-1)]
+    topic_counter_argu = topic_counter_argu.replace("</br>","")
+    topic_counter_argu = topic_counter_argu.replace("<br/>","")
+    if re.search('(^http://[\w\s\.\/]*)', topic_counter_argu): 
+        topic_counter_argu = topic_counter_argu.replace(" ", "")
+        topic_counter_argu = topic_counter_argu.replace(" ", "")
     wrapped_text = textwrap.fill(
-        str(df_topic_counter_argu), width=100, break_long_words=False, replace_whitespace=False
+        str(topic_counter_argu), width=100, break_long_words=False, replace_whitespace=False
     )
     return wrapped_text
 
-def main_page(results):
+@st.cache_data(show_spinner=False)
+def design_page():
     with st.sidebar:
         render_sidebar()
     
     st.image('./img/ArgGenius.png')  # TITLE and Creator information
     st.write('\n')  # add spacing
 
+def main_page():
+    design_page()
     input_topic = st.selectbox('Select topics',
                                 ARGU_TOPIC_OPTIONS_DISPLAY,
                                 index=0,
@@ -302,7 +316,24 @@ def main_page(results):
     arguHuman = session.get("arguHuman")
     if os.path.isfile(SAVE_FILEPATH):
         results = load_data()
-    if session.get("status") < 2 or session.get("index") == -1:
+        session.update("results", results)
+    if session.get("status") == -1:
+        with st.spinner('Showing current leaderboard...'):
+            if not session.get("results"):
+                st.warning("No competition results yet. Please provide thumb-up feedbacks for us first.", icon="⚠️")
+            else:
+                df_template = pd.DataFrame({
+                        "Participant name": ["Human", "AI"],
+                        "Score": [0, 0]
+                    })
+                df_results = pd.DataFrame(results)
+                df = df_results["Winner"].value_counts().reset_index()
+                df.columns = ['Participant name', 'Score']
+                leaderboard = pd.concat([df,df_template]).groupby('Participant name').agg('max').reset_index()
+                leaderboard = leaderboard.sort_values(by='Score', ascending=False)
+                st.dataframe(leaderboard, use_container_width=True, hide_index=True)
+                time.sleep(0.25)
+    if (session.get("status") > 0 and session.get("status") < 2) or session.get("index") == -1:
         index = random.randint(0, 1)
         session.update("index", index)
     index = session.get("index")
@@ -320,7 +351,7 @@ def main_page(results):
                     arguAI = gen_counter_arguAI(input_topic,
                                             input_stance)
                     arguHuman = gen_counter_arguHuman(input_topic, input_stance)
-        
+            
         if arguAI != "" and arguHuman != "":
             session.update("arguAI", arguAI)
             session.update("arguHuman", arguHuman)
@@ -339,7 +370,6 @@ def main_page(results):
                  arg2_placeholder = st.empty()
                  arg2_button = st.empty()
             hint = st.empty()
-            
             arg1_title.markdown("#### Argument 1")
             arg2_title.markdown("#### Argument 2")
             arg1_placeholder.write(gen_argus[index])
@@ -357,14 +387,15 @@ def main_page(results):
                 arg2_placeholder.empty()
                 arg1_button.empty()
                 arg2_button.empty()
-                st.balloons()
                 if session.get("status") == 2:
+                    with st.spinner('The winner goes to...'):
+                        time.sleep(0.5)
                     imagepath = './img/AI_win.png' if index == 0 else './img/Human_win.png'
                     with open(imagepath, "rb") as f:
                         image = base64.b64encode(f.read()).decode("utf-8")
-                    winner = "AI " if index == 0 else "Human"
+                    winner = "AI" if index == 0 else "Human"
                     session.update("winner", winner)
-                    text = f'{winner} win!!!'
+                    text = f'{winner}!!!'
                     st.markdown(f"""
                                 <center>
                                     <img src="data:image/png;base64,{image}" />
@@ -374,14 +405,17 @@ def main_page(results):
                                     &nbsp;    
                                 </center>
                                 """, unsafe_allow_html=True)
+                    st.balloons()
                         
                 if session.get("status") == 3:
+                    with st.spinner('The winner goes to...'):
+                        time.sleep(1.5)
                     imagepath = './img/Human_win.png' if index == 0 else './img/AI_win.png'
                     with open(imagepath, "rb") as f:
                         image = base64.b64encode(f.read()).decode("utf-8")
-                    winner = "Human " if index == 0 else "AI"
+                    winner = "Human" if index == 0 else "AI"
                     session.update("winner", winner)
-                    text = f'{winner} win!!!'
+                    text = f'{winner}!!!'
                     st.markdown(f"""
                                 <center>
                                     <img src="data:image/png;base64,{image}" />
@@ -391,25 +425,28 @@ def main_page(results):
                                     &nbsp;    
                                 </center>
                                 """, unsafe_allow_html=True)
+                    st.balloons()
                     
-            new_sample = {
-                'Issue': session.get('topic'),
-                'Stance': session.get('stance'),
-                'ArguAI': session.get('arguAI'),
-                'ArguHuman': session.get('arguHuman'),
-                'Winner': session.get("winner")
-            }
-            results.append(new_sample)
+                new_sample = {
+                    'Issue': session.get('topic'),
+                    'Stance': session.get('stance'),
+                    'ArguAI': session.get('arguAI'),
+                    'ArguHuman': session.get('arguHuman'),
+                    'Winner': session.get("winner")
+                }
+                if not session.has("results"):
+                    session.init("results", [])
+                session.get("results").append(new_sample)
             
-            #st.write("randm index for block1:", index)
-            #st.write("button state:", session.get("status"))
-            #st.write("results:", results)
-    st.button("Reset", key="reset", on_click=clicked, args=(0, True, results))  
+    st.button("Show Leaderboard", key="leaderboard", on_click=clicked, args=(-1, False, session.get("results")))
+    st.button("Reset", key="reset", on_click=clicked, args=(0, True, session.get("results")))
+    #st.write("randm index for block1:", index)
+    #st.write("button state:", session.get("status"))
+    #st.write("results:", session.get("results"))
                     
 if __name__ == '__main__':
     # call main function
-    result_db = []
-    main_page(result_db)
+    main_page()
                 
                 
 
