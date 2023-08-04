@@ -3,6 +3,7 @@ from dotenv import load_dotenv, find_dotenv
 import streamlit as st 
 from langchain import HuggingFaceHub
 from langchain import PromptTemplate, LLMChain, OpenAI 
+from langchain.chains import SequentialChain
 from langchain.prompts.few_shot import FewShotPromptTemplate
 import openai
 from getpass import getpass
@@ -137,8 +138,8 @@ def load_llm_models():
     falcon = HuggingFaceHub(repo_id=repo_id_1, 
                          model_kwargs={"temperature": 1.0, "max_new_tokens": 500})
     flan = HuggingFaceHub(repo_id=repo_id_2, 
-                          model_kwargs={"temperature": 1.0, "max_new_tokens": 500})
-    gpt = OpenAI(model_name="text-davinci-003", temperature=0.9)
+                          model_kwargs={"temperature": 0.7, "max_new_tokens": 500})
+    gpt = OpenAI(model_name="text-davinci-003", temperature=1.0)
     return falcon, flan, gpt
 
 def agi(topic, stance, model="gpt", fewshot=False):
@@ -159,27 +160,51 @@ def agi(topic, stance, model="gpt", fewshot=False):
         response = llm_chain.run(query)
         wrapped_text = textwrap.fill(response, width=100, break_long_words=False, replace_whitespace=False)
         return wrapped_text
-    else: 
-        template="You are a debate expert that can produce a persuasive argument \
-              to convince people to change their viewpoints. \
+    else:
+        # LLMChain to generate a draft version
+        template_draft = """You are a debate expert. \
               Now, given the debate issue {topic}, \
-              please write a succinct and compelling argument {stance}. \
-              Your answer should be in less than 50 words and in a more informal, conversational way.\
-              Also, in your argument please mention convincing and logical reasons or citations from studies or websites to support your claim. \
-              If citations are used, please mentioned where you cite them. \
-              Avoid exposing your AI identity in your answer, such as mentioning you are an AI model in your answer. \
-              "
-        prompt = PromptTemplate(
+              it is your job to write a succinct and compelling argument {stance}. \
+              Your argument should also clearly elaborate on convincing and logical reasons such as some concrete real-life examples or some citations of research studies or some statistical facts to support your claim. \
+              And please avoid exposing your AI identity in your argument, such as mentioning you are an AI model in your argument. \
+              """
+        prompt_draft = PromptTemplate(
                     input_variables=["topic", "stance"],
-                    template=template,
+                    template=template_draft,
                 ) 
-        llm_chain = LLMChain(prompt=prompt, llm=llm)
-        response = llm_chain.run({
+        draft_chain = LLMChain(prompt=prompt_draft, llm=llm, output_key="argument")
+        
+        # LLMChain to rewrite the argument
+        template_rewrite = """You are an opinion leader and a netizen who have won lots of deltas on Reddit ChangMyView online discussion forum. \
+            Given the argument, it is your job to rewrite the argument as a comment on the forum with the specified rules as follows: 
+            1. The comment shoule be in less than 50 words and in a more conversational and informal way. \
+            2. If there is any citations of studies or statistical data in the arugment, keep the information in the comment. \
+            3. To be more casual, try to use some catchy internet slangs in the comment. \
+            4. You can also sometimes use your sense of humor to add some clever puns or hilarious jokes as a hook to be more persuasive and attractive. \
+            5. Some most common spelling mistakes in the comment are acceptable. \
+            
+            Argument: {argument}
+            """
+        prompt_rewrite = PromptTemplate(
+                    input_variables=["argument"],
+                    template=template_rewrite,
+                )
+        rewrite_chain = LLMChain(prompt=prompt_rewrite, llm=llm, output_key="comment")
+        overall_chain = SequentialChain(chains=[draft_chain, rewrite_chain], 
+                                        input_variables=["topic", "stance"],
+                                        output_variables=["comment"])
+        response = overall_chain({
                     'topic': topic,
                     'stance': stance
                     })
-        wrapped_text = textwrap.fill(response, width=100, break_long_words=False, replace_whitespace=False)
+        post = response["comment"]
+        if "Rewrite:" in post:
+            post = post.split("Rewrite:")[-1]
+        elif "Rewrite argument:" in post:
+            post = post.split("Rewrite argument:")[-1]
+        wrapped_text = textwrap.fill(post, width=100, break_long_words=False, replace_whitespace=False)
         return wrapped_text
+
 
 def gen_counter_arguAI(input_topic, input_stance):
     assert input_stance in ALL_STANCES_OPTIONS
@@ -191,10 +216,10 @@ def gen_counter_arguAI(input_topic, input_stance):
         return agi(input_topic, stance)
     elif input_stance in ["Evolution", "Creation"]:
         stance = "in favor of Creation" if input_stance == "Evolution" else "in favor of Evolution"
-        return agi(input_topic, stance, model="falcon")
+        return agi(input_topic, stance)
     else:
         stance = "in favor of Personal persuit" if input_stance == "Advancing the common good" else "in favor of Advancing the common good"
-        return agi(input_topic, stance, model="falcon")
+        return agi(input_topic, stance)
 
 @st.cache_data(show_spinner=False)
 def load_arguHuman_data():
@@ -249,8 +274,7 @@ def gen_counter_arguHuman(input_topic, input_stance):
     topic_counter_argu = topic_counter_argu.replace("</br>","")
     topic_counter_argu = topic_counter_argu.replace("<br/>","")
     if re.search('(^http://[\w\s\.\/]*)', topic_counter_argu): 
-        topic_counter_argu = topic_counter_argu.replace(" ", "")
-        topic_counter_argu = topic_counter_argu.replace(" ", "")
+        topic_counter_argu = topic_counter_argu.replace(r"\s+", "")
     wrapped_text = textwrap.fill(
         str(topic_counter_argu), width=100, break_long_words=False, replace_whitespace=False
     )
